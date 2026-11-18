@@ -100,7 +100,7 @@ function ingest(r, quiet){
   fresh.sort(function(a,b){ return new Date(a.t) - new Date(b.t); });
   fresh.forEach(function(e){ e.isNew = true; if (!e.who) { var jj = jobs.filter(function(x){ return x.id === e.id; })[0]; e.who = jj ? jj.customer : ""; } S.feed.unshift(e); });
   S.feed = S.feed.slice(0, 80);
-  if (S.session !== null && r.session !== S.session) { resetChat("Fresh demo session started. I've cleared my notes from the last one."); }
+  if (S.session !== null && r.session !== S.session) { resetChat("Fresh demo session started. I've cleared my notes from the last one."); S.notices = []; renderNotices(); }
   S.session = r.session;
   S.jobs = jobs;
   S.loaded = true; S.err = false; S.lastOk = now;
@@ -482,10 +482,16 @@ function bgPdf(kind, j0, i){
     var note = function(t){ S.notices.forEach(function(n){ if (n.id === j.id && n.kind === kind) n.pdf = t; }); renderNotices(); var st = $("docState"); if (st && S.jobId === j.id) st.innerHTML = t; };
     if ((j.data.docs || []).some(function(x){ return x.name === name; }) || !window.html2pdf) return;
     note("Saving as a PDF to the job…");
+    var idle = function(){ return new Promise(function(res){ var n = 0; (function w(){ if ((!S.asking && n > 3) || n > 180) return res(); if (S.asking) n = Math.min(n, 1); n++; setTimeout(w, 1000); })(); }); };
+    var has = function(){ return api({ action:"board" }, 20000).then(function(r){ var jj = (r.jobs || []).filter(function(x){ return x.id === j.id; })[0]; return !!(jj && ((jj.data || {}).docs || []).some(function(x){ return x.name === name; })); }).catch(function(){ return true; }); };
+    var payload = null;
+    var save = function(){ return api({ action:"photo", kind:"doc", id:j.id, contactId:j.contactId, by:"Annie", cap:name, file:payload }, 60000); };
     var html = '<div style="width:720px;background:#fff"><style>' + DOC_CSS + '</style>' + docHtml(kind, j, i) + '</div>';
     return window.html2pdf().set({ margin:10, filename:name + ".pdf", html2canvas:{ scale:2, backgroundColor:"#ffffff", scrollX:0, scrollY:0 }, jsPDF:{ unit:"mm", format:"a4" }, pagebreak:{ mode:["css","legacy"] } }).from(html, "string").outputPdf("datauristring").then(function(uri){
-      return api({ action:"photo", kind:"doc", id:j.id, contactId:j.contactId, by:"Annie", cap:name, file:{ name:name.replace(/[^\w\- ]/g, "").replace(/\s+/g, "-") + ".pdf", mime:"application/pdf", b64:uri.split(",")[1] } }, 60000);
-    }).then(function(){ note("✓ Saved to the job and the media library as a PDF"); refresh(true, true); }).catch(function(){ note("Saved on the job. The PDF copy didn't save."); });
+      payload = { name:name.replace(/[^\w\- ]/g, "").replace(/\s+/g, "-") + ".pdf", mime:"application/pdf", b64:uri.split(",")[1] };
+      return idle();
+    }).then(save).then(function(){ return new Promise(function(r){ setTimeout(r, 6000); }); }).then(has).then(function(ok){ return ok ? null : idle().then(save); })
+    .then(function(){ note("✓ Saved to the job and the media library as a PDF"); refresh(true, true); }).catch(function(){ note("Saved on the job. The PDF copy didn't save."); });
   });
 }
 
@@ -621,7 +627,7 @@ function openReset(){
 function doReset(){
   $("rGo").disabled = true; $("rGo").textContent = "Resetting…";
   api({ action:"reset" }, 60000).then(function(r){
-    closeModal(); S.pending = {}; S.seen = {}; S.ids = {}; S.feed = []; S.loaded = false; S.session = null;
+    closeModal(); S.pending = {}; S.seen = {}; S.ids = {}; S.feed = []; S.loaded = false; S.session = null; S.notices = []; renderNotices();
     resetChat("All reset. Every job is back where it started.");
     setHint(null);
     toast("Demo reset · session " + r.session);
