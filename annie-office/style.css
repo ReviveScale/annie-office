@@ -258,3 +258,14 @@ a.btn:hover{border-color:var(--cyan)}
 .mail>div{padding:4px 0;border-bottom:1px solid #e3e8ec}
 .mail small{display:inline-block;width:64px;color:#5b6b78;font-size:12px}
 .mail pre{white-space:pre-wrap;font:inherit;margin:10px 0 0;line-height:1.55;min-height:40px}
+.notices{position:sticky;top:8px;z-index:40;display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.notices:empty{display:none}
+.notice{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid #1f5b6b;border-radius:12px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.notice.new{animation:dropin .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes dropin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.notice .ni{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--grad);color:#04222b;font-size:16px;flex:none}
+.notice .nt{flex:1;min-width:0;font-size:14px}
+.notice .nt small{display:block;color:var(--muted);font-size:12px}
+.notice .ghost.sm{min-height:36px;width:36px;padding:0}
+.mail .attach{margin-top:10px;min-height:34px;font-size:13px;background:#eef6f9;color:#0e7490;border:1px solid #cfe3ea;border-radius:8px;padding:4px 10px;font-weight:600}
+.mail .attach:hover{border-color:#0e7490}

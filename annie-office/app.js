@@ -249,7 +249,7 @@ function vJob(){
       '<div class="quick">' + (nx ? '<button class="primary" type="button" data-move="' + nx + '">Move to ' + nx + "</button>" : "") +
         '<button type="button" data-focus="' + j.id + '">Ask Annie about this job</button>' +
         sugs.map(function(s){ return '<button class="ghost" type="button" data-ask="' + esc(s) + '" data-hint="' + j.id + '">“' + esc(s) + '”</button>'; }).join("") + "</div></section>" +
-      draftCard(j) + docsCard(j) + quoteCard(j) + reportsCard(j) + photosCard(j) +
+      draftCard(j) + invoiceCard(j) + docsCard(j) + quoteCard(j) + reportsCard(j) + photosCard(j) +
     "</div>" +
     '<div style="display:flex;flex-direction:column;gap:16px;min-width:0">' + visitsCard(j) + notesCard(j) + '<section class="card"><h2>Job log <small>newest first</small></h2>' +
       '<form class="quick" id="logForm" style="margin:0 0 10px"><input id="logIn" placeholder="Add to the job log…" aria-label="Add to the job log"><button type="submit">Add</button></form>' +
@@ -312,18 +312,34 @@ function vSchedule(){
       return '<button class="r" type="button" data-job="' + x.j.id + '"><span class="pill ' + (x.kind === "visit" ? "cy" : "amb") + '" style="min-width:78px;justify-content:center">' + esc(tm) + '</span><div class="g"><div class="t">' + (x.kind === "visit" ? esc(x.v.what) + " · " + esc(x.v.tech) : "Task: " + esc(x.v.title)) + '</div><div class="s">' + esc(x.j.customer) + " · " + esc(x.j.suburb) + "</div></div></button>";
     }).join("") + "</div></section>"; }).join("") : '<section class="card"><p class="empty">Nothing booked yet.</p></section>');
 }
+function invInfo(j){
+  var d = j.data, m = String(j.invoice || "").match(/ABC-\d+/), num = d.invNo || (m ? m[0] : "Draft");
+  var items = d.quote && d.quote.items && d.quote.items.length ? d.quote.items : [{ name:(j.type || d.event || "Restoration") + " restoration works", amount:Number(j.value) || 0 }];
+  var total = items.reduce(function(t, x){ return t + (Number(x.amount) || 0); }, 0);
+  var sentM = String(j.invoice || "").match(/Sent ([^,]+), due ([^(]+)/);
+  var issue = sentM ? sentM[1].trim() : new Date().toLocaleDateString("en-AU",{ day:"numeric", month:"short" });
+  var due = sentM ? sentM[2].trim() : new Date(Date.now() + 14 * 86400000).toLocaleDateString("en-AU",{ day:"numeric", month:"short" });
+  return { num:num, items:items, total:total, issue:issue, due:due, status:/overdue/i.test(j.invoice) ? "Overdue" : /^draft/i.test(j.invoice) ? "Draft, not sent" : /^sent/i.test(j.invoice) ? "Sent" : /^paid/i.test(j.invoice) ? "Paid" : "" };
+}
+function hasInvoice(j){ return /draft|sent|paid/i.test(j.invoice || "") || j.stage === "Invoiced" || j.stage === "Paid"; }
+function docTitle(kind, j, i){ return kind === "quote" ? "Quote" : kind === "invoice" ? "Invoice " + invInfo(j).num : (j.data.reports[i] || {}).tpl || "Report"; }
 function docHtml(kind, j, i){
   var d = j.data, today = new Date().toLocaleDateString("en-AU",{ day:"numeric", month:"long", year:"numeric" });
-  var head = '<div class="dh"><div><b>' + BIZ.name + '</b><br>' + BIZ.addr + '<br>' + BIZ.phone + ' · ' + BIZ.web + '</div><div style="text-align:right"><b>' + (kind === "quote" ? "QUOTE" : esc(d.reports[i].tpl).toUpperCase()) + '</b><br>' + today + (j.ref ? '<br>Job ' + esc(j.ref) : "") + "</div></div>" +
-    '<dl><dt>Customer</dt><dd>' + esc(j.customer) + '</dd><dt>Site</dt><dd>' + esc(d.address || j.suburb) + '</dd><dt>Sent by</dt><dd>' + esc(j.source) + (d.claim ? " · Claim " + esc(d.claim) : "") + "</dd></dl>";
-  var body = kind === "quote" ? (d.quote.scope ? "<p>" + esc(d.quote.scope) + "</p>" : "") + '<table>' + d.quote.items.map(function(x, n){ return "<tr><td>" + (n + 1) + ". " + esc(x.name) + '</td><td class="n">' + money(x.amount) + "</td></tr>"; }).join("") + '<tr class="t"><td>Total (inc GST)</td><td class="n">' + money(d.quote.total) + "</td></tr></table><p class=\"fine\">Valid for 30 days. Prices include GST.</p>"
+  var inv = kind === "invoice" ? invInfo(j) : null;
+  var label = kind === "quote" ? "QUOTE" : kind === "invoice" ? "INVOICE " + esc(inv.num) : esc(d.reports[i].tpl).toUpperCase();
+  var dateLine = kind === "invoice" ? "Issued " + esc(inv.issue) + "<br>Due " + esc(inv.due) : today;
+  var head = '<div class="dh"><div><b>' + BIZ.name + '</b><br>' + BIZ.addr + '<br>' + BIZ.phone + ' · ' + BIZ.web + '</div><div style="text-align:right"><b>' + label + '</b><br>' + dateLine + (j.ref ? '<br>Job ' + esc(j.ref) : "") + "</div></div>" +
+    '<dl><dt>' + (kind === "invoice" ? "Bill to" : "Customer") + '</dt><dd>' + esc(kind === "invoice" && j.source && j.source !== "Direct" ? j.source + " (for " + j.customer + ")" : j.customer) + '</dd><dt>Site</dt><dd>' + esc(d.address || j.suburb) + '</dd><dt>Sent by</dt><dd>' + esc(j.source) + (d.claim ? " · Claim " + esc(d.claim) : "") + "</dd></dl>";
+  var lines = function(items, total, note){ return '<table>' + items.map(function(x, n){ return "<tr><td>" + (n + 1) + ". " + esc(x.name) + '</td><td class="n">' + money(x.amount) + "</td></tr>"; }).join("") + '<tr class="t"><td>Total (inc GST)</td><td class="n">' + money(total) + "</td></tr></table><p class=\"fine\">" + note + "</p>"; };
+  var body = kind === "quote" ? (d.quote.scope ? "<p>" + esc(d.quote.scope) + "</p>" : "") + lines(d.quote.items, d.quote.total, "Valid for 30 days. Prices include GST.")
+    : kind === "invoice" ? lines(inv.items, inv.total, "Payment due within 14 days. Thank you for choosing ABC Restoration.")
     : '<div class="rb">' + esc(d.reports[i].body).replace(/^([A-Z][A-Z &/\-]{2,})$/gm, "<h3>$1</h3>") + "</div>";
   return '<div class="doc">' + head + body + "</div>";
 }
 var DOC_CSS = ".doc{background:#fff;color:#14202b;font:14px/1.55 'IBM Plex Sans',system-ui,sans-serif;padding:28px;border-radius:10px}.doc .dh{display:flex;justify-content:space-between;gap:16px;border-bottom:3px solid #0e7490;padding-bottom:12px;margin-bottom:14px;font-size:13px;color:#5b6b78}.doc .dh b{color:#14202b;font-size:16px}.doc dl{display:grid;grid-template-columns:90px 1fr;gap:4px 12px;margin:0 0 14px;font-size:13.5px}.doc dt{color:#5b6b78}.doc dd{margin:0;font-weight:600}.doc table{width:100%;border-collapse:collapse}.doc td{padding:8px 4px;border-top:1px solid #e3e8ec}.doc td.n{text-align:right;white-space:nowrap}.doc tr.t td{font-weight:700;border-top:2px solid #14202b}.doc .fine{color:#5b6b78;font-size:12px}.doc h3{font-size:13px;letter-spacing:.04em;color:#0e7490;margin:16px 0 4px}.doc .rb{white-space:pre-wrap}";
 function openDoc(kind, i){
   var j = job(S.jobId); if (!j) return;
-  modal('<h2 id="mTitle">' + (kind === "quote" ? "Quote" : esc(j.data.reports[i].tpl)) + ' · ' + esc(j.customer) + '</h2><style>' + DOC_CSS + '</style><div style="margin:12px 0">' + docHtml(kind, j, i) + '</div><div class="btns"><button class="ghost" type="button" data-act="close">Close</button><button class="primary" type="button" data-print="' + kind + '" data-i="' + (i || 0) + '">Print or save as PDF</button></div>');
+  modal('<h2 id="mTitle">' + esc(docTitle(kind, j, i)) + ' · ' + esc(j.customer) + '</h2><style>' + DOC_CSS + '</style><div style="margin:12px 0">' + docHtml(kind, j, i) + '</div><div class="btns"><button class="ghost" type="button" data-act="close">Close</button><button class="primary" type="button" data-print="' + kind + '" data-i="' + (i || 0) + '">Print or save as PDF</button></div>');
 }
 function printDoc(kind, i){
   var j = job(S.jobId); var w = window.open("", "_blank"); if (!w) { toast("Allow pop-ups to print."); return; }
@@ -372,82 +388,105 @@ function setupMic(){
 }
 
 
+function attachFor(j){ var d = j.data.draft; if (!d) return null; if (/quote/i.test(d.kind || "") && j.data.quote) return { kind:"quote", name:"Quote - " + j.customer + ".pdf" }; if (/payment|invoice/i.test(d.kind || "") || hasInvoice(j)) return { kind:"invoice", name:"Invoice " + invInfo(j).num + " - " + j.customer + ".pdf" }; return null; }
+function mailHtml(j, bodyId){
+  var d = j.data.draft, at = attachFor(j);
+  return '<div class="mail"><div><small>To</small> ' + esc(d.to || "") + '</div><div><small>Subject</small> ' + esc(d.subject || "") + '</div><pre' + (bodyId ? ' id="' + bodyId + '"' : "") + '>' + (bodyId ? "" : esc(d.body)) + '</pre>' + (at ? '<button class="attach" type="button" data-attach="' + j.id + '">📎 ' + esc(at.name) + '</button>' : "") + '</div>';
+}
 function draftCard(j){
   var d = j.data.draft; if (!d || !d.body) return "";
-  return '<section class="card" style="border-color:#145061"><h2>' + esc(d.kind || "Chaser") + ' <small><span class="pill grn">Ready to send</span></small></h2><div class="mail"><div><small>To</small> ' + esc(d.to || "") + '</div><div><small>Subject</small> ' + esc(d.subject || "") + '</div><pre>' + esc(d.body) + '</pre></div><div class="quick"><button type="button" data-copydraft="' + j.id + '">Copy</button><span style="color:var(--muted);font-size:13px;align-self:center">' + esc(byLabel(d.by)) + " · " + esc(ago(d.at)) + "</span></div></section>";
+  return '<section class="card" style="border-color:#145061"><h2>' + esc(d.kind || "Chaser") + ' <small><span class="pill grn">Ready to send</span></small></h2>' + mailHtml(j) + '<div class="quick"><button type="button" data-copydraft="' + j.id + '">Copy email</button><span style="color:var(--muted);font-size:13px;align-self:center">' + esc(byLabel(d.by)) + " · " + esc(ago(d.at)) + "</span></div></section>";
+}
+function invoiceCard(j){
+  if (!hasInvoice(j)) return "";
+  var v = invInfo(j);
+  return '<section class="card"><h2>Invoice ' + esc(v.num) + ' <small><span class="pill ' + (v.status === "Overdue" ? "red" : v.status === "Paid" ? "grn" : "cy") + '">' + esc(v.status || j.invoice) + '</span></small></h2><table><tbody><tr><td>' + v.items.length + ' line' + (v.items.length === 1 ? "" : "s") + ' · due ' + esc(v.due) + '</td><td class="num"><b>' + money(v.total) + '</b></td></tr></tbody></table><div class="quick"><button type="button" data-doc="invoice">Open invoice</button></div></section>';
 }
 function docsCard(j){
   var ds = j.data.docs || [];
   if (!ds.length) return "";
   return '<section class="card"><h2>Documents <small>saved in the job and the media library</small></h2>' + ds.slice().reverse().map(function(x){ return '<div class="rep"><span>📄 ' + esc(x.name) + '<small style="display:block;color:var(--faint);font-size:12px">' + esc(byLabel(x.by)) + " · " + esc(ago(x.t)) + '</small></span><a class="btn sm" href="' + esc(x.url) + '" target="_blank" rel="noopener">Open PDF</a></div>'; }).join("") + "</section>";
 }
-/* live documents: when Annie writes a quote or report, build it on screen, then save it as a PDF */
-var docQueue = [], docBusy = false;
-function docSig(j){ var q = j.data.quote; var sig = { q:q && q.at ? q.at : "", d:j.data.draft && j.data.draft.at ? j.data.draft.at : "" }; (j.data.reports || []).forEach(function(r, i){ if (r.at) sig["r" + r.tpl] = r.at; }); return sig; }
+/* Background documents: when Annie writes a quote, report, invoice or chaser, a notice slides in at the top.
+   PDFs for quotes and reports save in the background. Click View to watch it build, or carry on. */
+S.notices = [];
+function docSig(j){ var q = j.data.quote; var sig = { q:q && q.at ? q.at : "", d:j.data.draft && j.data.draft.at ? j.data.draft.at : "", inv:/^draft/i.test(j.invoice || "") ? j.invoice : "" }; (j.data.reports || []).forEach(function(r){ if (r.at) sig["r" + r.tpl] = r.at; }); return sig; }
 function scanDocs(first){
   S.docSig = S.docSig || {};
+  var added = false;
   S.jobs.forEach(function(j){
     var now = docSig(j), old = S.docSig[j.id];
     if (!first && old) {
       var fresh = function(t){ return Date.now() - new Date(t).getTime() < 300000; };
-      if (now.q && now.q !== old.q && fresh(now.q) && /^Annie/.test((j.data.quote && j.data.quote.by) || "Annie")) docQueue.push({ id:j.id, kind:"quote" });
-      if (now.d && now.d !== old.d && fresh(now.d)) docQueue.push({ id:j.id, kind:"draft" });
-      Object.keys(now).forEach(function(k){ if (k.charAt(0) === "r" && now[k] !== old[k] && fresh(now[k])) { var rs = j.data.reports || [], r = null; for (var x = rs.length - 1; x >= 0; x--) { if ("r" + rs[x].tpl === k && rs[x].body) { r = rs[x]; break; } } if (r && /^Annie/.test(r.by || "")) docQueue.push({ id:j.id, kind:"report", tpl:r.tpl }); } });
+      var push = function(n){ n.id = j.id; n.who = j.customer; n.t = Date.now(); n.key = j.id + n.kind + (n.tpl || "") + n.t; n.seen = false; S.notices.unshift(n); added = true; };
+      if (now.q && now.q !== old.q && fresh(now.q) && /^Annie/.test((j.data.quote && j.data.quote.by) || "Annie")) { push({ kind:"quote", label:"Quote drafted" }); bgPdf("quote", j, 0); }
+      if (now.inv && now.inv !== old.inv) push({ kind:"invoice", label:"Invoice drafted" });
+      if (now.d && now.d !== old.d && fresh(now.d)) push({ kind:"draft", label:(j.data.draft.kind || "Chaser") + " drafted" });
+      Object.keys(now).forEach(function(k){ if (k.charAt(0) === "r" && now[k] !== old[k] && fresh(now[k])) { var rs = j.data.reports || []; for (var x = rs.length - 1; x >= 0; x--) { if ("r" + rs[x].tpl === k && rs[x].body) { if (/^Annie/.test(rs[x].by || "")) { push({ kind:"report", tpl:rs[x].tpl, label:rs[x].tpl + " written" }); bgPdf("report", j, x); } break; } } } });
     }
     S.docSig[j.id] = now;
   });
-  nextDoc();
+  if (added) renderNotices();
 }
-function nextDoc(){
-  if (docBusy || !docQueue.length || !$("modal").hidden) return;
-  var d = docQueue.shift(); var j = job(d.id); if (!j) return nextDoc();
-  var i = 0; if (d.kind === "report") { i = -1; (j.data.reports || []).forEach(function(r, x){ if (r.tpl === d.tpl && r.body) i = x; }); }
-  if (d.kind === "report" && i < 0) return nextDoc();
-  docBusy = true;
+function renderNotices(){
+  var box = $("notices"); if (!box) return;
+  S.notices = S.notices.slice(0, 6);
+  box.innerHTML = S.notices.map(function(n, i){
+    var ic = n.kind === "quote" ? "💲" : n.kind === "invoice" ? "🧾" : n.kind === "draft" ? "✉" : "📄";
+    return '<div class="notice' + (n.seen ? "" : " new") + '"><span class="ni">' + ic + '</span><div class="nt"><b>' + esc(n.label) + '</b> · ' + esc(n.who) + '<small>' + (n.pdf ? esc(n.pdf) : "Annie · just now") + '</small></div><button class="primary sm" type="button" data-notice="' + i + '">View</button><button class="ghost sm" type="button" data-dismiss="' + i + '" aria-label="Dismiss">×</button></div>';
+  }).join("");
+  S.notices.forEach(function(n){ n.seen = true; });
+}
+function openNotice(i){
+  var n = S.notices[i]; if (!n) return; var j = job(n.id); if (!j) return;
+  var idx = 0; if (n.kind === "report") { idx = -1; (j.data.reports || []).forEach(function(r, x){ if (r.tpl === n.tpl && r.body) idx = x; }); if (idx < 0) return; }
+  S.notices.splice(i, 1); renderNotices();
   if (S.view !== "job" || S.jobId !== j.id) go("job", j.id);
-  liveDoc(d.kind, i);
+  liveDoc(n.kind, idx, !n.viewed);
 }
-function liveDoc(kind, i){
+function liveDoc(kind, i, animate){
   var j = job(S.jobId);
   if (kind === "draft") {
     var dr = j.data.draft;
-    modal('<h2 id="mTitle"><span class="av think" style="width:26px;height:26px;font-size:12px;display:inline-grid;vertical-align:middle;margin-right:8px">A</span><span>Annie is drafting the ' + esc((dr.kind || "chaser").toLowerCase()) + ' · ' + esc(j.customer) + '</span></h2><div class="mail" style="margin:12px 0"><div><small>To</small> ' + esc(dr.to || "") + '</div><div><small>Subject</small> ' + esc(dr.subject || "") + '</div><pre id="draftBody"></pre></div><p id="docState" class="lead" style="margin:0">Writing…</p><div class="btns"><button class="ghost" type="button" data-act="closedoc">Close</button><button class="primary" type="button" data-copydraft="' + j.id + '">Copy</button></div>');
-    var pre = $("draftBody"), t = dr.body, n = 0;
-    var tk = setInterval(function(){ n = Math.min(t.length, n + Math.max(4, Math.round(t.length / 110))); pre.textContent = t.slice(0, n); if (n >= t.length) { clearInterval(tk); var av = document.querySelector("#mTitle .av"); if (av) av.classList.remove("think"); var h = document.querySelector("#mTitle span:last-child"); if (h) h.textContent = (dr.kind || "Chaser") + " · " + j.customer; $("docState").innerHTML = "✓ Saved on the job, ready to send."; docBusy = false; } }, 24);
+    modal('<h2 id="mTitle">' + esc((dr.kind || "Chaser") + " · " + j.customer) + '</h2><div style="margin:12px 0">' + mailHtml(j, "draftBody") + '</div><p class="lead" style="margin:0">Saved on the job, ready to send.</p><div class="btns"><button class="ghost" type="button" data-act="close">Close</button><button class="primary" type="button" data-copydraft="' + j.id + '">Copy email</button></div>');
+    var pre = $("draftBody"), t = dr.body, n = animate ? 0 : t.length; pre.textContent = t.slice(0, n);
+    if (animate) { var tk = setInterval(function(){ n = Math.min(t.length, n + Math.max(4, Math.round(t.length / 110))); if (!document.body.contains(pre)) return clearInterval(tk); pre.textContent = t.slice(0, n); if (n >= t.length) clearInterval(tk); }, 24); }
     return;
   }
-  var title = kind === "quote" ? "Quote" : j.data.reports[i].tpl;
-  modal('<h2 id="mTitle"><span class="av think" style="width:26px;height:26px;font-size:12px;display:inline-grid;vertical-align:middle;margin-right:8px">A</span>Annie is writing the ' + esc(title.toLowerCase()) + ' · ' + esc(j.customer) + '</h2><style>' + DOC_CSS + '</style><div id="liveDoc" style="margin:12px 0"></div><p id="docState" class="lead" style="margin:0">Writing…</p><div class="btns"><button class="ghost" type="button" data-act="closedoc">Close</button><button class="primary" type="button" data-print="' + kind + '" data-i="' + (i || 0) + '">Print or save as PDF</button></div>');
+  var title = docTitle(kind, j, i), saved = (j.data.docs || []).some(function(x){ return x.name.indexOf(title + " - " + j.customer) === 0; });
+  modal('<h2 id="mTitle">' + esc(title + " · " + j.customer) + '</h2><style>' + DOC_CSS + '</style><div id="liveDoc" style="margin:12px 0"></div><p id="docState" class="lead" style="margin:0">' + (kind === "invoice" ? "Draft invoice in the CRM, with the PDF and email draft ready. Not sent." : saved ? "✓ Saved to the job and the media library as a PDF." : "Saving as a PDF to the job in the background…") + '</p><div class="btns"><button class="ghost" type="button" data-act="close">Close</button><button class="primary" type="button" data-print="' + kind + '" data-i="' + (i || 0) + '">Print or save as PDF</button></div>');
   var box = $("liveDoc"); box.innerHTML = docHtml(kind, j, i);
+  if (!animate) return;
   var doc = box.firstChild;
-  var done = function(){ var av = document.querySelector("#mTitle .av"); if (av) av.classList.remove("think"); var h = $("mTitle"); if (h) h.lastChild.textContent = title + " · " + j.customer; savePdf(kind, i); };
-  if (kind === "quote") {
+  if (kind !== "report") {
     var rows = doc.querySelectorAll("tr"), k = 0;
     rows.forEach(function(r){ r.style.opacity = 0; });
-    (function step(){ if (k < rows.length) { rows[k].style.transition = "opacity .35s"; rows[k].style.opacity = 1; k++; setTimeout(step, 380); } else done(); })();
+    (function step(){ if (k < rows.length) { rows[k].style.transition = "opacity .35s"; rows[k].style.opacity = 1; k++; setTimeout(step, 300); } })();
   } else {
-    var rb = doc.querySelector(".rb"), full = rb.innerHTML, txt = j.data.reports[i].body, n = 0;
+    var rb = doc.querySelector(".rb"), full = rb.innerHTML, txt = j.data.reports[i].body, n2 = 0;
     rb.textContent = "";
     var tick = setInterval(function(){
-      n = Math.min(txt.length, n + Math.max(6, Math.round(txt.length / 160)));
-      rb.innerHTML = esc(txt.slice(0, n)).replace(/^([A-Z][A-Z &/\-]{2,})$/gm, "<h3>$1</h3>") + (n < txt.length ? '<span class="caret">▍</span>' : "");
+      if (!document.body.contains(rb)) return clearInterval(tick);
+      n2 = Math.min(txt.length, n2 + Math.max(6, Math.round(txt.length / 160)));
+      rb.innerHTML = esc(txt.slice(0, n2)).replace(/^([A-Z][A-Z &/\-]{2,})$/gm, "<h3>$1</h3>") + (n2 < txt.length ? '<span class="caret">▍</span>' : "");
       box.scrollTop = box.scrollHeight;
-      if (n >= txt.length) { clearInterval(tick); rb.innerHTML = full; done(); }
+      if (n2 >= txt.length) { clearInterval(tick); rb.innerHTML = full; }
     }, 24);
   }
 }
-function savePdf(kind, i){
-  var j = job(S.jobId); var st = $("docState");
-  var name = (kind === "quote" ? "Quote" : j.data.reports[i].tpl) + " - " + j.customer + " (" + new Date().toLocaleDateString("en-AU", { day:"numeric", month:"short" }) + ")";
-  if ((j.data.docs || []).some(function(x){ return x.name === name; })) { if (st) st.innerHTML = "✓ Already saved to the job as a PDF."; docBusy = false; return; }
-  if (!window.html2pdf) { if (st) st.textContent = "Saved on the job."; docBusy = false; return; }
-  if (st) st.textContent = "Saving as a PDF to the job…";
-  var html = '<div style="width:720px;background:#fff"><style>' + DOC_CSS + '</style>' + docHtml(kind, j, i) + '</div>';
-  window.html2pdf().set({ margin:10, filename:name + ".pdf", html2canvas:{ scale:2, backgroundColor:"#ffffff", scrollX:0, scrollY:0 }, jsPDF:{ unit:"mm", format:"a4" }, pagebreak:{ mode:["css","legacy"] } }).from(html, "string").outputPdf("datauristring").then(function(uri){
-    return api({ action:"photo", kind:"doc", id:j.id, contactId:j.contactId, by:"Annie", cap:name, file:{ name:name.replace(/[^\w\- ]/g, "").replace(/\s+/g, "-") + ".pdf", mime:"application/pdf", b64:uri.split(",")[1] } }, 60000);
-  }).then(function(){ if (st) st.innerHTML = "✓ Saved to the job and the media library as a PDF, with a note on the customer."; refresh(true, true); })
-    .catch(function(){ if (st) st.textContent = "Saved on the job. The PDF copy didn't save this time."; })
-    .finally(function(){ docBusy = false; });
+var pdfChain = Promise.resolve();
+function bgPdf(kind, j0, i){
+  pdfChain = pdfChain.then(function(){
+    var j = job(j0.id); if (!j) return;
+    var name = docTitle(kind, j, i) + " - " + j.customer + " (" + new Date().toLocaleDateString("en-AU", { day:"numeric", month:"short" }) + ")";
+    var note = function(t){ S.notices.forEach(function(n){ if (n.id === j.id && n.kind === kind) n.pdf = t; }); renderNotices(); var st = $("docState"); if (st && S.jobId === j.id) st.innerHTML = t; };
+    if ((j.data.docs || []).some(function(x){ return x.name === name; }) || !window.html2pdf) return;
+    note("Saving as a PDF to the job…");
+    var html = '<div style="width:720px;background:#fff"><style>' + DOC_CSS + '</style>' + docHtml(kind, j, i) + '</div>';
+    return window.html2pdf().set({ margin:10, filename:name + ".pdf", html2canvas:{ scale:2, backgroundColor:"#ffffff", scrollX:0, scrollY:0 }, jsPDF:{ unit:"mm", format:"a4" }, pagebreak:{ mode:["css","legacy"] } }).from(html, "string").outputPdf("datauristring").then(function(uri){
+      return api({ action:"photo", kind:"doc", id:j.id, contactId:j.contactId, by:"Annie", cap:name, file:{ name:name.replace(/[^\w\- ]/g, "").replace(/\s+/g, "-") + ".pdf", mime:"application/pdf", b64:uri.split(",")[1] } }, 60000);
+    }).then(function(){ note("✓ Saved to the job and the media library as a PDF"); refresh(true, true); }).catch(function(){ note("Saved on the job. The PDF copy didn't save."); });
+  });
 }
 
 function kv(k, v){ return "<div><small>" + esc(k) + "</small><b>" + esc(v || "—") + "</b></div>"; }
@@ -603,12 +642,15 @@ document.addEventListener("click", function(e){
   if (t.dataset.doc) { openDoc(t.dataset.doc, +(t.dataset.i || 0)); return; }
   if (t.dataset.print) { printDoc(t.dataset.print, +(t.dataset.i || 0)); return; }
   if (t.dataset.photo) { openPhoto(+t.dataset.photo); return; }
+  if (t.dataset.notice !== undefined) { openNotice(+t.dataset.notice); return; }
+  if (t.dataset.dismiss !== undefined) { S.notices.splice(+t.dataset.dismiss, 1); renderNotices(); return; }
+  if (t.dataset.attach) { var ja = job(t.dataset.attach), at = ja && attachFor(ja); if (at) { if (S.view !== "job" || S.jobId !== ja.id) go("job", ja.id); openDoc(at.kind, 0); } return; }
   if (t.dataset.copydraft) { var jd = job(t.dataset.copydraft); if (jd && jd.data.draft) { var txt = "Subject: " + jd.data.draft.subject + "\n\n" + jd.data.draft.body; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function(){ toast("Copied"); }).catch(function(){ toast("Select the text to copy it"); }); } return; }
   if (t.dataset.samples) { uploadPhotos(SAMPLE_PHOTOS.map(function(p){ return { url:p[0], cap:p[1], name:p[0].split("/").pop() }; })); return; }
   var a = t.dataset.act;
   if (a === "new") return openNew();
   if (a === "close") return closeModal();
-  if (a === "closedoc") { closeModal(); setTimeout(nextDoc, 300); return; }
+
   if (a === "reset") return openReset();
   if (a === "doreset") return doReset();
   if (a === "retry") return refresh();
