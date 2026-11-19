@@ -23,15 +23,16 @@ var SUGS = {
   Invoiced:["They've paid. Mark it as paid."]
 };
 var IC = {
+  list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1.3"/><circle cx="4.5" cy="12" r="1.3"/><circle cx="4.5" cy="18" r="1.3"/></svg>',
   overview:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
   jobs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg>',
   money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 9.5v5M17.5 9.5v5"/></svg>',
   schedule:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   activity:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>'
 };
-var NAV = [["overview","Overview"],["jobs","Job board"],["schedule","Schedule"],["money","Money"],["activity","Activity"]];
+var NAV = [["overview","Overview"],["list","Jobs"],["jobs","Job board"],["schedule","Schedule"],["money","Money"],["activity","Activity"]];
 
-var S = { jobs:[], session:null, loaded:false, err:false, view:"overview", jobId:null, feed:[], seen:{}, ids:{}, pending:{}, asking:false, q:"", tech:"All", hint:null, flash:{}, lastOk:0, notes:{} };
+var S = { jobs:[], session:null, loaded:false, err:false, view:"overview", jobId:null, feed:[], seen:{}, ids:{}, pending:{}, asking:false, q:"", tech:"All", stageF:"All", emgF:false, from:"jobs", hint:null, flash:{}, lastOk:0, notes:{} };
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
@@ -167,9 +168,9 @@ function stats(){
 function nav(){
   var st = stats();
   var cnt = { overview: st.emg.length, money: st.ready.length };
-  var h = NAV.map(function(n){ return '<button type="button" data-go="' + n[0] + '"' + (S.view === n[0] || (S.view === "job" && n[0] === "jobs") ? ' aria-current="page"' : "") + ' aria-label="' + n[1] + '">' + IC[n[0]] + '<span class="lbl">' + n[1] + "</span>" + (cnt[n[0]] ? '<span class="cnt">' + cnt[n[0]] + "</span>" : "") + "</button>"; }).join("");
+  var h = NAV.map(function(n){ return '<button type="button" data-go="' + n[0] + '"' + (S.view === n[0] || (S.view === "job" && n[0] === S.from) ? ' aria-current="page"' : "") + ' aria-label="' + n[1] + '">' + IC[n[0]] + '<span class="lbl">' + n[1] + "</span>" + (cnt[n[0]] ? '<span class="cnt">' + cnt[n[0]] + "</span>" : "") + "</button>"; }).join("");
   $("nav").innerHTML = h;
-  $("tabs").innerHTML = NAV.map(function(n){ return '<button type="button" data-go="' + n[0] + '"' + (S.view === n[0] || (S.view === "job" && n[0] === "jobs") ? ' aria-current="page"' : "") + ">" + IC[n[0]] + "<span>" + n[1].replace("Job board","Jobs").replace("Schedule","Diary") + "</span></button>"; }).join("");
+  $("tabs").innerHTML = NAV.map(function(n){ return '<button type="button" data-go="' + n[0] + '"' + (S.view === n[0] || (S.view === "job" && n[0] === S.from) ? ' aria-current="page"' : "") + ">" + IC[n[0]] + "<span>" + n[1].replace("Job board","Board").replace("Schedule","Diary").replace("Overview","Home") + "</span></button>"; }).join("");
 }
 function pillsFor(j){
   var p = [];
@@ -191,10 +192,10 @@ function vOverview(){
   var max = 1, per = STAGES.map(function(s){ var a = S.jobs.filter(function(j){ return j.stage === s; }); max = Math.max(max, a.length); return { s:s, n:a.length, v:a.reduce(function(t,j){ return t + (Number(j.value)||0); }, 0) }; });
   var hr = new Date().getHours(), hi = hr < 12 ? "Morning" : hr < 17 ? "Afternoon" : "Evening";
   return '<div class="head"><div><h1>' + hi + ', ABC Restoration</h1><p>' + st.live.length + " live jobs · " + money(st.pipeV) + " in work</p></div>" +
-    '<div class="acts"><button type="button" data-ask="What needs doing today?">Ask Annie what\'s on today</button><button class="primary" type="button" data-act="new">+ New job</button></div></div>' +
+    '<div class="acts"><button type="button" data-ask="What needs doing today?">Ask Annie what\'s on today</button><button class="primary hide-m" type="button" data-act="new">+ New job</button></div></div>' +
     '<div class="kpis">' +
-      '<button class="kpi' + (st.emg.length ? " hot" : "") + '" type="button" data-go="jobs"><div class="n">' + st.emg.length + '</div><div class="l">Emergencies to attend</div></button>' +
-      '<button class="kpi" type="button" data-go="jobs"><div class="n">' + st.live.length + '</div><div class="l">Live jobs</div></button>' +
+      '<button class="kpi' + (st.emg.length ? " hot" : "") + '" type="button" data-go="list"><div class="n">' + st.emg.length + '</div><div class="l">Emergencies to attend</div></button>' +
+      '<button class="kpi" type="button" data-go="list"><div class="n">' + st.live.length + '</div><div class="l">Live jobs</div></button>' +
       '<button class="kpi go" type="button" data-go="money"><div class="n">' + money(st.readyV) + '</div><div class="l">Ready to invoice (' + st.ready.length + ")</div></button>" +
       '<button class="kpi" type="button" data-go="money"><div class="n">' + money(st.owedV) + '</div><div class="l">Waiting on payment (' + st.owed.length + ")</div></button>" +
     "</div>" +
@@ -208,15 +209,31 @@ function vOverview(){
       '<section class="card"><h2>Live activity <small>office, Annie and WhatsApp</small></h2><div class="feed">' + (S.feed.slice(0, 14).map(evRow).join("") || '<p class="empty">No activity yet.</p>') + "</div></section>" +
     "</div>";
 }
+function vList(){
+  var q = S.q.toLowerCase();
+  var emgOf = function(j){ return j.data.urgency === "Emergency" && (j.stage === "Accepted" || j.stage === "Make safe"); };
+  var list = S.jobs.filter(function(j){ return (S.stageF === "All" || j.stage === S.stageF) && (!S.emgF || emgOf(j)) && (!q || (j.customer + " " + j.suburb + " " + j.type + " " + j.source + " " + j.ref + " " + j.tech).toLowerCase().indexOf(q) >= 0); })
+    .sort(function(a, b){ return (emgOf(b) - emgOf(a)) || (STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage)); });
+  var cnt = function(s){ return S.jobs.filter(function(j){ return s === "All" || j.stage === s; }).length; };
+  var stCls = function(s){ return s === "Complete" ? "grn" : s === "Invoiced" ? "cy" : s === "Paid" ? "" : (s === "Accepted" || s === "Make safe") ? "amb" : ""; };
+  return '<div class="head"><div><h1>Jobs</h1><p>Every job in one list. Tap one to open it.</p></div><div class="acts"><button class="primary hide-m" type="button" data-act="new">+ New job</button></div></div>' +
+    '<div class="toolbar"><input id="q" type="search" placeholder="Search name, suburb, client or job no" aria-label="Search jobs" value="' + esc(S.q) + '">' +
+    '<button class="sm' + (S.emgF ? " primary" : "") + '" type="button" data-emgf="1" aria-pressed="' + S.emgF + '">Emergency only</button></div>' +
+    '<div class="toolbar chips">' + ["All"].concat(STAGES).map(function(s){ return '<button class="sm' + (S.stageF === s ? " primary" : "") + '" type="button" data-stagef="' + s + '">' + s + ' <span class="cn">' + cnt(s) + "</span></button>"; }).join("") + "</div>" +
+    '<section class="card flush"><table class="jl"><thead><tr><th>Customer</th><th>Stage</th><th class="hide-m">Next step</th><th class="hide-m">Tech</th><th class="num">Value</th></tr></thead><tbody>' +
+    (list.map(function(j){
+      return '<tr class="click" data-job="' + j.id + '"><td><b>' + esc(j.customer) + "</b>" + (emgOf(j) ? ' <span class="pill amb">Emergency</span>' : "") + '<div class="sub">' + esc(j.type) + " · " + esc(j.suburb) + " · " + esc(j.source) + '</div></td><td><span class="pill ' + stCls(j.stage) + '">' + esc(j.stage) + '</span></td><td class="hide-m">' + esc(j.next || "") + '<div class="sub">' + esc(j.who || "") + '</div></td><td class="hide-m">' + esc(j.tech || "Unassigned") + '</td><td class="num">' + (j.value ? money(j.value) : "—") + "</td></tr>";
+    }).join("") || '<tr><td colspan="5" class="empty">No jobs match. <button class="sm" type="button" data-act="new">+ Add a job</button></td></tr>') + "</tbody></table></section>";
+}
 function vJobs(){
   var q = S.q.toLowerCase();
   var list = S.jobs.filter(function(j){ return (S.tech === "All" || j.tech === S.tech) && (!q || (j.customer + " " + j.suburb + " " + j.type + " " + j.source + " " + j.ref).toLowerCase().indexOf(q) >= 0); });
   var techs = ["All"]; S.jobs.forEach(function(j){ if (j.tech && techs.indexOf(j.tech) < 0 && j.tech !== "Unassigned") techs.push(j.tech); });
   var now = Date.now();
-  return '<div class="head"><div><h1>Job board</h1><p>' + (window.innerWidth > 900 ? "Drag a job to move it, or tell Annie what happened." : "Tap a job to open it, or tell Annie what happened.") + '</p></div><div class="acts"><button class="primary" type="button" data-act="new">+ New job</button></div></div>' +
+  return '<div class="head"><div><h1>Job board</h1><p>' + (window.innerWidth > 900 ? "Drag a job to move it, or tell Annie what happened." : "Tap a job to open it, or tell Annie what happened.") + '</p></div><div class="acts"><button class="primary hide-m" type="button" data-act="new">+ New job</button></div></div>' +
     '<div class="toolbar"><input id="q" type="search" placeholder="Search name, suburb, job no" aria-label="Search jobs" value="' + esc(S.q) + '">' +
     techs.map(function(t){ return '<button class="sm' + (S.tech === t ? " primary" : "") + '" type="button" data-tech="' + esc(t) + '">' + esc(t === "All" ? "All techs" : t) + "</button>"; }).join("") + "</div>" +
-    '<div class="board">' + STAGES.map(function(s){
+    '<div class="board">' + STAGES.filter(function(s){ return s !== "Paid" || list.some(function(j){ return j.stage === "Paid"; }); }).map(function(s){
       var a = list.filter(function(j){ return j.stage === s; });
       var v = a.reduce(function(t,j){ return t + (Number(j.value)||0); }, 0);
       return '<div class="col" data-stage="' + s + '"><h3><span style="color:var(--ink2);font-size:13px">' + s + "<em>" + (v ? money(v) : "&nbsp;") + "</em></span><span>" + a.length + "</span></h3>" +
@@ -235,12 +252,12 @@ function vJob(){
   var d = j.data, i = STAGES.indexOf(j.stage), nx = nextStage(j.stage);
   var sugs = (SUGS[j.stage] || []).concat(j.stage === "Complete" ? [] : []);
   var miss = String(j.missing || "").split(";").map(function(s){ return s.trim(); }).filter(Boolean);
-  return '<button class="ghost sm back" type="button" data-go="jobs">← Job board</button>' +
+  return '<button class="ghost sm back" type="button" data-go="' + S.from + '">← ' + (S.from === "list" ? "Jobs" : "Job board") + '</button>' +
     '<div class="jhead"><div><h1>' + esc(j.customer) + '</h1><p class="sub">' + esc((d.event || j.type) + " · " + j.suburb + " · " + (j.source || "")) + (j.ref ? " · Job " + esc(j.ref) : "") + "</p></div>" +
     '<div class="head acts" style="margin:0">' + pillsFor(j) + (j.value ? '<span class="pill">' + money(j.value) + "</span>" : "") + "</div></div>" +
     '<div class="steps" role="group" aria-label="Stage">' + STAGES.map(function(s, k){ return '<button type="button" class="' + (k < i ? "done" : k === i ? "cur" : "") + '" data-move="' + s + '" aria-label="Move to ' + s + '"' + (k === i ? ' aria-current="step"' : "") + '><span class="lg">' + s + '</span><span class="sm">' + SHORT[s] + "</span></button>"; }).join("") + "</div>" +
     '<div class="grid2"><div style="display:flex;flex-direction:column;gap:16px;min-width:0">' +
-      '<div class="callout' + (miss.length ? " warn" : "") + '"><small>Next step · ' + esc(j.who || "Admin") + '</small><b>' + esc(j.next || "—") + "</b>" + (miss.length ? '<div style="margin-top:6px;font-size:13.5px;color:#fde68a">Missing: ' + esc(miss.join(", ")) + "</div>" : "") + "</div>" +
+      '<div class="callout' + (miss.length ? " warn" : "") + '"><small>Next step · ' + esc(j.who || "Admin") + '</small><b>' + esc(j.next || "—") + "</b>" + (miss.length ? '<div style="margin-top:6px;font-size:13.5px;color:var(--warn-ink)">Missing: ' + esc(miss.join(", ")) + "</div>" : "") + "</div>" +
       '<section class="card"><h2>Job details</h2><div class="kv">' +
         kv("Address", d.address || j.suburb) + kv("Phone", fmtPhone(j.phone)) + kv("Technician", j.tech) + kv("Sent by", j.source) + kv("Claim no", d.claim || "—") + kv("Property", d.ptype || "—") + kv("Invoice", j.invoice || "—") + kv("Reports", j.report || "—") +
         '<div style="grid-column:1/-1"><small>Instructions</small><b style="font-weight:500">' + esc(d.instructions || "—") + "</b></div>" +
@@ -253,7 +270,7 @@ function vJob(){
     "</div>" +
     '<div style="display:flex;flex-direction:column;gap:16px;min-width:0">' + visitsCard(j) + notesCard(j) + '<section class="card"><h2>Job log <small>newest first</small></h2>' +
       '<form class="quick" id="logForm" style="margin:0 0 10px"><input id="logIn" placeholder="Add to the job log…" aria-label="Add to the job log"><button type="submit">Add</button></form>' +
-      '<ul class="log">' + (d.log || []).slice().sort(function(x, y){ return new Date(y.t) - new Date(x.t); }).map(function(l){ var k = byKind(l.by); return '<li><span class="ev" style="padding:0;border:0;display:block">' + (k === "an" ? '<span class="ic an" style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--grad);color:#04222b;font-weight:700;font-size:12px">A</span>' : k === "wa" ? '<span class="ic wa" style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--wa);color:#04220f;font-weight:700;font-size:11px">WA</span>' : '<span style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--raise);color:var(--ink2);font-weight:700;font-size:12px">' + (k === "sys" ? "•" : esc(String(l.by || "O").charAt(0))) + "</span>") + "</span><div>" + esc(l.x) + "<time>" + esc(byLabel(l.by)) + " · " + esc(ago(l.t)) + "</time></div></li>"; }).join("") + "</ul>" +
+      '<ul class="log">' + (d.log || []).slice().sort(function(x, y){ return new Date(y.t) - new Date(x.t); }).map(function(l){ var k = byKind(l.by); return '<li><span class="ev" style="padding:0;border:0;display:block">' + (k === "an" ? '<span class="ic an" style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--grad);color:#fff;font-weight:700;font-size:12px">A</span>' : k === "wa" ? '<span class="ic wa" style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--wa);color:#04220f;font-weight:700;font-size:11px">WA</span>' : '<span style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--raise);color:var(--ink2);font-weight:700;font-size:12px">' + (k === "sys" ? "•" : esc(String(l.by || "O").charAt(0))) + "</span>") + "</span><div>" + esc(l.x) + "<time>" + esc(byLabel(l.by)) + " · " + esc(ago(l.t)) + "</time></div></li>"; }).join("") + "</ul>" +
     "</section></div></div>";
 }
 
@@ -395,7 +412,7 @@ function mailHtml(j, bodyId){
 }
 function draftCard(j){
   var d = j.data.draft; if (!d || !d.body) return "";
-  return '<section class="card" style="border-color:#145061"><h2>' + esc(d.kind || "Chaser") + ' <small><span class="pill grn">Ready to send</span></small></h2>' + mailHtml(j) + '<div class="quick"><button type="button" data-copydraft="' + j.id + '">Copy email</button><span style="color:var(--muted);font-size:13px;align-self:center">' + esc(byLabel(d.by)) + " · " + esc(ago(d.at)) + "</span></div></section>";
+  return '<section class="card" style="border-color:#B5E2C8"><h2>' + esc(d.kind || "Chaser") + ' <small><span class="pill grn">Ready to send</span></small></h2>' + mailHtml(j) + '<div class="quick"><button type="button" data-copydraft="' + j.id + '">Copy email</button><span style="color:var(--muted);font-size:13px;align-self:center">' + esc(byLabel(d.by)) + " · " + esc(ago(d.at)) + "</span></div></section>";
 }
 function invoiceCard(j){
   if (!hasInvoice(j)) return "";
@@ -521,7 +538,7 @@ function render(changed){
   // don't clobber a focused input on the same screen
   var ae = document.activeElement, keepQ = ae && ae.id === "q", keepLog = ae && ae.id === "logIn" ? ae.value : null;
   if (!changed && v === lastView && (keepQ || keepLog !== null)) return;
-  var h = v === "schedule" ? vSchedule() : v === "jobs" ? vJobs() : v === "job" ? vJob() : v === "money" ? vMoney() : v === "activity" ? vActivity() : vOverview();
+  var h = v === "schedule" ? vSchedule() : v === "list" ? vList() : v === "jobs" ? vJobs() : v === "job" ? vJob() : v === "money" ? vMoney() : v === "activity" ? vActivity() : vOverview();
   $("view").innerHTML = h;
   S.feed.forEach(function(e){ e.isNew = false; });
   if (keepQ) { var q = $("q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
@@ -530,7 +547,7 @@ function render(changed){
   lastView = v;
   sugs();
 }
-function go(v, id){ S.view = v; if (id) S.jobId = id; lastView = ""; render(true); if (v === "job") loadNotes(S.jobId); }
+function go(v, id){ if (v === "job" && (S.view === "list" || S.view === "jobs")) S.from = S.view; S.view = v; if (id) S.jobId = id; lastView = ""; render(true); if (v === "job") loadNotes(S.jobId); }
 
 /* ---------- Annie ---------- */
 function bubble(cls, html){ var d = document.createElement("div"); d.className = "b " + cls; d.innerHTML = html; $("chat").appendChild(d); scrollChat(); return d; }
@@ -645,6 +662,8 @@ document.addEventListener("click", function(e){
   if (t.dataset.move) { moveTo(S.jobId, t.dataset.move); return; }
   if (t.dataset.paid) { e.stopPropagation(); moveTo(t.dataset.paid, "Paid"); return; }
   if (t.dataset.tech) { S.tech = t.dataset.tech; render(true); return; }
+  if (t.dataset.stagef) { S.stageF = t.dataset.stagef; render(true); return; }
+  if (t.dataset.emgf) { S.emgF = !S.emgF; render(true); return; }
   if (t.dataset.doc) { openDoc(t.dataset.doc, +(t.dataset.i || 0)); return; }
   if (t.dataset.print) { printDoc(t.dataset.print, +(t.dataset.i || 0)); return; }
   if (t.dataset.photo) { openPhoto(+t.dataset.photo); return; }
@@ -675,6 +694,9 @@ document.addEventListener("input", function(e){ if (e.target.id === "q") { S.q =
 document.addEventListener("keydown", function(e){ if (e.key === "Escape") { if (!$("modal").hidden) closeModal(); else document.body.classList.remove("annie-open"); } });
 $("modal").addEventListener("click", function(e){ if (e.target.id === "modal") closeModal(); });
 $("fab").addEventListener("click", function(){ document.body.classList.add("annie-open"); setTimeout(function(){ $("askIn").focus(); }, 300); });
+function syncAnnie(){ var o = document.body.classList.contains("annie-open"); var t = $("askToggle"); if (t) t.setAttribute("aria-expanded", o ? "true" : "false"); }
+new MutationObserver(syncAnnie).observe(document.body, { attributes:true, attributeFilter:["class"] });
+$("askToggle").addEventListener("click", function(){ var o = document.body.classList.toggle("annie-open"); if (o) setTimeout(function(){ $("askIn").focus(); }, 50); });
 $("annieClose").addEventListener("click", function(){ document.body.classList.remove("annie-open"); });
 $("ctxX").addEventListener("click", function(){ setHint(null); });
 /* drag and drop */
