@@ -563,13 +563,14 @@ function sugs(){
   var list = j ? (SUGS[j.stage] || []).concat(["What's still missing on this job?"]) : SUGS.base;
   $("sugs").innerHTML = list.slice(0, 3).map(function(s){ return '<button type="button" data-ask="' + esc(s) + '"' + (j ? ' data-hint="' + j.id + '"' : "") + ">" + esc(s) + "</button>"; }).join("");
 }
-function ask(text, hintId){
+function ask(text, hintId, opt){
+  opt = opt || {};
   text = String(text || "").trim();
   if (!text || S.asking) return;
   if (hintId) setHint(hintId);
   var j = S.hint ? job(S.hint) : (S.view === "job" ? job(S.jobId) : null);
   document.body.classList.add("annie-open");
-  bubble("u", esc(text));
+  bubble("u", esc(opt.shown || text));
   var w = document.createElement("div"); w.className = "work";
   w.innerHTML = '<div class="wt"><b>Annie is working</b><span class="tm" id="wtm">0.0s</span></div><div class="st run"><i></i><span>Reading your message' + (j ? " about " + esc(j.customer) : "") + "</span></div>";
   $("chat").appendChild(w); scrollChat();
@@ -591,6 +592,7 @@ function ask(text, hintId){
       } else {
         bubble("a", esc(r.text || "Done."));
         done();
+        if (opt.after) opt.after(r);
       }
     })();
   }).catch(function(e){
@@ -612,7 +614,9 @@ function closeModal(){ $("modal").hidden = true; $("modal").innerHTML = ""; }
 function sel(id, opts, v){ return '<select id="' + id + '">' + opts.map(function(o){ return "<option" + (o === v ? " selected" : "") + ">" + esc(o) + "</option>"; }).join("") + "</select>"; }
 function openNew(s){
   s = s || {};
-  modal('<h2 id="mTitle">New job</h2><p class="lead">Adds the job and the customer to the board at Accepted.</p>' +
+  modal('<h2 id="mTitle">New job</h2><p class="lead">Upload the job order and Annie sets it up, or fill it in yourself.</p>' +
+    '<div class="pdfdrop"><div><b>Got a job order PDF?</b><small>Annie reads it and fills in the customer, address, claim, instructions and access notes.</small></div><label class="btn primary" for="pdfIn">Upload job order (PDF)</label><input id="pdfIn" type="file" accept="application/pdf,.pdf" hidden></div>' +
+    '<p class="or">or enter it yourself</p>' +
     '<div class="prefill"><button class="sm" type="button" data-sample="0">Sample: burst pipe (emergency)</button><button class="sm" type="button" data-sample="1">Sample: storm leak</button><button class="sm" type="button" data-sample="2">Sample: strata mould</button></div>' +
     '<form id="newForm"><div class="fields">' +
     '<div><label class="f" for="nCust">Customer name</label><input id="nCust" required value="' + esc(s.customer) + '"></div>' +
@@ -626,6 +630,60 @@ function openNew(s){
     '<div><label class="f" for="nVal">Estimated value ($)</label><input id="nVal" inputmode="numeric" value="' + esc(s.value) + '"></div>' +
     '<div class="full"><label class="f" for="nIns">Instructions</label><textarea id="nIns">' + esc(s.instructions) + "</textarea></div>" +
     '</div><p class="ferr" id="nErr" hidden></p><div class="btns"><button class="ghost" type="button" data-act="close">Cancel</button><button class="primary" id="nGo" type="submit">Add job</button></div></form>');
+}
+
+/* ---------- job order PDF: Annie reads it and sets the job up ---------- */
+var pdfLib = null;
+function loadPdfLib(){
+  if (pdfLib) return pdfLib;
+  pdfLib = new Promise(function(res, rej){
+    var s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = function(){ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); };
+    s.onerror = function(){ pdfLib = null; rej(new Error("pdf reader")); };
+    document.head.appendChild(s);
+  });
+  return pdfLib;
+}
+function pdfText(buf){
+  return loadPdfLib().then(function(lib){ return lib.getDocument({ data:new Uint8Array(buf.slice(0)) }).promise; }).then(function(doc){
+    var out = [], p = Promise.resolve();
+    for (var i = 1; i <= Math.min(doc.numPages, 6); i++) (function(n){ p = p.then(function(){ return doc.getPage(n); }).then(function(pg){ return pg.getTextContent(); }).then(function(tc){
+      var line = [], last = null;
+      tc.items.forEach(function(it){ var y = Math.round(it.transform[5]); if (last !== null && Math.abs(y - last) > 2) { out.push(line.join(" ")); line = []; } line.push(it.str); last = y; });
+      if (line.length) out.push(line.join(" "));
+    }); })(i);
+    return p.then(function(){ return out.map(function(s){ return s.replace(/\s+/g, " ").trim(); }).filter(Boolean).join("\n").slice(0, 9000); });
+  });
+}
+function pdfJob(file){
+  if (!/pdf$/i.test(file.type) && !/\.pdf$/i.test(file.name)) { toast("That isn't a PDF. Pick the job order PDF."); return; }
+  if (S.asking) { toast("Annie is still busy. Try again in a moment."); return; }
+  var btn = document.querySelector('label[for="pdfIn"]'); if (btn) btn.textContent = "Reading the PDF…";
+  var buf = null, before = {};
+  S.jobs.forEach(function(j){ before[j.id] = 1; });
+  file.arrayBuffer().then(function(b){ buf = b; return pdfText(b); }).then(function(txt){
+    if (txt.replace(/\s/g, "").length < 40) throw new Error("no text");
+    closeModal();
+    var msg = "A job order PDF was just uploaded on the job desk (file: " + file.name + ").\nJob order PDF text:\n" + txt +
+      "\n\nSet this job up now with Create Job: take every detail from the job order (insured name, address, phone, who sent it, claim number, their job number, event, urgency, instructions, access and excess notes), a sensible next step and what is missing before it can be quoted. Then reply in 3 or 4 short lines: who sent it, the customer and suburb, what happened and how urgent, and what is still needed.";
+    ask(msg, null, { shown:"📄 New job order: " + file.name, after:function(){
+      refresh(true, true).then(function(){
+        var nj = S.jobs.filter(function(j){ return !before[j.id]; })[0];
+        if (!nj) return;
+        S.flash[nj.id] = Date.now(); go("job", nj.id);
+        var bytes = new Uint8Array(buf), bin = "";
+        for (var i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        var name = "Job order - " + nj.customer;
+        return api({ action:"photo", kind:"doc", id:nj.id, contactId:nj.contactId, by:"Office", cap:name, file:{ name:name.replace(/[^\w\- ]/g, "").replace(/\s+/g, "-") + ".pdf", mime:"application/pdf", b64:btoa(bin) } }, 60000)
+          .then(function(){ toast("Job order PDF saved to " + nj.customer + "'s job"); return refresh(true, true); })
+          .catch(function(){ toast("Job set up. The PDF copy didn't save."); });
+      });
+    } });
+  }).catch(function(e){
+    if (btn) btn.textContent = "Upload job order (PDF)";
+    toast(String(e && e.message) === "no text" ? "That PDF has no readable text (it may be a scan). Fill the job in below." : "Couldn't read that PDF. Fill the job in below.");
+  });
 }
 function submitNew(){
   var v = function(id){ return $(id).value.trim(); };
@@ -689,7 +747,7 @@ document.addEventListener("submit", function(e){
   if (e.target.id === "bookForm") { var jb = job(S.jobId); var st = new Date($("bDate").value + "T" + $("bTime").value + ":00+11:00"); if (jb && !isNaN(st)) { $("bGo").disabled = true; $("bGo").textContent = "Booking…"; api({ action:"book", id:jb.id, contactId:jb.contactId, customer:jb.customer, start:st.toISOString(), mins:60, tech:$("bTech").value, what:$("bWhat").value, by:"Office" }, 30000).then(function(){ toast("Visit booked"); return refresh(true, true); }).catch(function(){ toast("That booking didn't save."); if ($("bGo")) { $("bGo").disabled = false; $("bGo").textContent = "Book visit"; } }); } }
   if (e.target.id === "logForm") { var x = $("logIn").value.trim(); if (x) { $("logIn").value = ""; update(S.jobId, { log:x }, "Added to the job log"); } }
 });
-document.addEventListener("change", function(e){ if (e.target.id === "photoIn" && e.target.files.length) { uploadPhotos(Array.prototype.map.call(e.target.files, function(f){ return { blob:f, name:f.name, cap:"" }; })); e.target.value = ""; } });
+document.addEventListener("change", function(e){ if (e.target.id === "pdfIn" && e.target.files.length) { pdfJob(e.target.files[0]); return; } if (e.target.id === "photoIn" && e.target.files.length) { uploadPhotos(Array.prototype.map.call(e.target.files, function(f){ return { blob:f, name:f.name, cap:"" }; })); e.target.value = ""; } });
 document.addEventListener("input", function(e){ if (e.target.id === "q") { S.q = e.target.value; var p = e.target.selectionStart; render(true); var q = $("q"); q.focus(); q.setSelectionRange(p, p); } });
 document.addEventListener("keydown", function(e){ if (e.key === "Escape") { if (!$("modal").hidden) closeModal(); else document.body.classList.remove("annie-open"); } });
 $("modal").addEventListener("click", function(e){ if (e.target.id === "modal") closeModal(); });

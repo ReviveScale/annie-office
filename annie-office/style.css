@@ -317,3 +317,10 @@ tr.click:hover td{background:rgba(34,211,238,.05)}
 .side{background:var(--panel)}
 @media (max-width:900px){ .tabs{grid-template-columns:repeat(6,1fr)} .tabs button{font-size:10.5px} table.jl td{padding:12px} }
 @media (max-width:900px){ .toolbar.chips{flex-wrap:nowrap;overflow-x:auto;margin-left:-16px;margin-right:-16px;padding:0 16px 4px;scrollbar-width:none} .toolbar.chips button{flex:none} .toolbar input{max-width:none;flex:1} }
+
+/* job order PDF upload in New job */
+.pdfdrop{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:1px dashed rgba(34,211,238,.45);background:rgba(34,211,238,.06);border-radius:12px;padding:14px 16px;margin-bottom:6px}
+.pdfdrop b{display:block;font-size:15px}
+.pdfdrop small{display:block;color:var(--muted);font-size:13px;max-width:360px}
+.pdfdrop label.btn.primary{background:var(--grad-btn);color:var(--on-grad);border-color:transparent}
+.or{text-align:center;color:var(--faint);font-size:12.5px;margin:10px 0 12px}
